@@ -19,4 +19,11 @@ jobs:
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         script: |
-          bash /root/tg-bot-vpn/scripts/deploy.sh
+          if [ ! -d "/root/tg-bot-vpn" ]; then
+            cd /root
+            git clone https://github.com/inasekin/tg-bot-vpn
+          fi
+          cd /root/tg-bot-vpn
+          git pull origin main
+          chmod +x scripts/deploy.sh
+          bash scripts/deploy.sh
