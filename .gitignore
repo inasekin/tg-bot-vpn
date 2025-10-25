@@ -208,3 +208,8 @@ __marimo__/
 
 .env
 .idea
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
