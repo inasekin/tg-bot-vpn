@@ -20,7 +20,7 @@ def add_peer_to_server(public_key, allowed_ip):
         cmd = [
             'wg', 'set', 'wg0',
             'peer', public_key,
-            'allowed-ips', f'{allowed_ip}/32'
+            'allowed-ips', f'{allowed_ip}/24'
         ]
 
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
