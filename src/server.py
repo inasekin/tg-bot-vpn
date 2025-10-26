@@ -7,16 +7,8 @@ logger = logging.getLogger(__name__)
 def add_peer_to_server(public_key, allowed_ip):
     """
     Добавить пира на WireGuard сервер
-
-    Args:
-        public_key: Публичный ключ клиента
-        allowed_ip: IP адрес клиента (например: 10.0.0.2)
-
-    Returns:
-        bool: True если успешно
     """
     try:
-        # Добавляем пира через wg команду
         cmd = [
             'wg', 'set', 'wg0',
             'peer', public_key,
@@ -26,7 +18,6 @@ def add_peer_to_server(public_key, allowed_ip):
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         logger.info(f"Добавлен пир {public_key[:8]}... с IP {allowed_ip}")
 
-        # Сохраняем конфигурацию
         subprocess.run(['wg-quick', 'save', 'wg0'], check=True)
 
         return True
@@ -41,12 +32,6 @@ def add_peer_to_server(public_key, allowed_ip):
 def remove_peer_from_server(public_key):
     """
     Удалить пира с WireGuard сервера
-
-    Args:
-        public_key: Публичный ключ клиента
-
-    Returns:
-        bool: True если успешно
     """
     try:
         cmd = ['wg', 'set', 'wg0', 'peer', public_key, 'remove']

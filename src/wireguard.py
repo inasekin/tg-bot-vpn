@@ -15,16 +15,15 @@ def generate_keys():
     private_bytes = private_key_obj.private_bytes(
         encoding=serialization.Encoding.Raw,
         format=serialization.PrivateFormat.Raw,
-        encryption_algorithm=serialization.NoEncryption()
+        encryption_algorithm=serialization.NoEncryption(),
     )
-    private_key = base64.b64encode(private_bytes).decode('utf-8')
+    private_key = base64.b64encode(private_bytes).decode("utf-8")
 
     public_key_obj = private_key_obj.public_key()
     public_bytes = public_key_obj.public_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PublicFormat.Raw
+        encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
     )
-    public_key = base64.b64encode(public_bytes).decode('utf-8')
+    public_key = base64.b64encode(public_bytes).decode("utf-8")
 
     return private_key, public_key
 
@@ -68,6 +67,6 @@ if __name__ == "__main__":
         private_key=priv,
         server_public_key="SERVER_PUBLIC_KEY_HERE",
         server_endpoint="1.2.3.4:51820",
-        client_ip="10.0.0.2"
+        client_ip="10.0.0.2",
     )
     print(config)
