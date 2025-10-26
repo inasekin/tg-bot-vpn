@@ -82,6 +82,7 @@ async def cmd_start(message: types.Message):
 
 @dp.message(F.text == "Получить VPN")
 async def get_vpn_start(message: types.Message):
+    logger.info(f"User {message.from_user.id} pressed 'Получить VPN'")
     user_id = message.from_user.id
     configs = db.get_all_vpn_configs(user_id)
 
@@ -141,6 +142,7 @@ async def select_name(callback: types.CallbackQuery):
 
 @dp.message(F.text == "Управлять VPN")
 async def manage_vpn(message: types.Message):
+    logger.info(f"User {message.from_user.id} pressed 'Управлять VPN'")
     user_id = message.from_user.id
     configs = db.get_all_vpn_configs(user_id)
 
@@ -228,6 +230,7 @@ async def delete_config(callback: types.CallbackQuery):
 
 @dp.message(F.text == "Мой профиль")
 async def show_profile(message: types.Message):
+    logger.info(f"User {message.from_user.id} pressed 'Мой профиль'")
     user_id = message.from_user.id
 
     db.add_user(user_id, message.from_user.username, message.from_user.first_name)
@@ -274,6 +277,14 @@ async def cmd_stats(message: types.Message):
     stats_text += f"VPN конфигураций: {total_configs}"
 
     await message.answer(stats_text, parse_mode="HTML")
+
+
+@dp.message()
+async def echo_handler(message: types.Message):
+    logger.info(f"Необработанное сообщение от {message.from_user.id}: '{message.text}'")
+    await message.answer(
+        "Используйте кнопки ниже для управления VPN", reply_markup=get_main_keyboard()
+    )
 
 
 async def main():

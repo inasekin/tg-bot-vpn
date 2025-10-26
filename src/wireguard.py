@@ -43,7 +43,7 @@ def create_client_config(private_key, server_public_key, server_endpoint, client
     """
     config = f"""[Interface]
 PrivateKey = {private_key}
-Address = {client_ip}/24
+Address = {client_ip}/32
 DNS = 1.1.1.1, 8.8.8.8
 MTU = 1380
 

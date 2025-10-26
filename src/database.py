@@ -87,7 +87,7 @@ class Database:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT * FROM vpn_configs 
+                SELECT * FROM vpn_configs
                 WHERE user_id = ? AND name = ?
             """,
                 (user_id, name),
@@ -100,7 +100,7 @@ class Database:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT * FROM vpn_configs 
+                SELECT * FROM vpn_configs
                 WHERE user_id = ?
                 ORDER BY created_at DESC
             """,
@@ -114,7 +114,7 @@ class Database:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                DELETE FROM vpn_configs 
+                DELETE FROM vpn_configs
                 WHERE user_id = ? AND name = ?
             """,
                 (user_id, name),
