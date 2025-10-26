@@ -136,7 +136,9 @@ async def select_name(callback: types.CallbackQuery):
             f"Скачайте файл и импортируйте в приложение WireGuard"
         )
 
-        await callback.message.answer_document(config_file, caption=f"Ваша VPN конфигурация для {name}")
+        await callback.message.answer_document(
+            config_file, caption=f"Ваша VPN конфигурация для {name}"
+        )
 
         logger.info(f"Создан VPN config для user {user_id}, название: {name}, IP: {client_ip}")
     except Exception as e:
@@ -144,7 +146,7 @@ async def select_name(callback: types.CallbackQuery):
         await callback.answer("Произошла ошибка при создании конфига", show_alert=True)
         try:
             await callback.message.edit_text("Произошла ошибка. Попробуйте снова.")
-        except:
+        except Exception:
             pass
 
 
@@ -228,7 +230,9 @@ async def delete_config(callback: types.CallbackQuery):
         if success:
             await callback.answer("Конфиг удален с сервера и из базы", show_alert=True)
         else:
-            await callback.answer("Конфиг удален из базы (ошибка удаления с сервера)", show_alert=True)
+            await callback.answer(
+                "Конфиг удален из базы (ошибка удаления с сервера)", show_alert=True
+            )
 
         configs = db.get_all_vpn_configs(user_id)
         if configs:
@@ -267,7 +271,7 @@ async def show_profile(message: types.Message):
         profile_text = "<b>Ваш профиль</b>\n\n"
         profile_text += f"ID: <code>{user_id}</code>\n"
         profile_text += f"Username: @{user.get('username', 'нет')}\n"
-        
+
         created_at = user.get('created_at', 'Неизвестно')
         if created_at and created_at != 'Неизвестно':
             profile_text += f"Регистрация: {created_at}\n\n"
