@@ -27,7 +27,7 @@ SERVER_PUBLIC_KEY = os.getenv("WG_SERVER_PUBLIC_KEY")
 SERVER_ENDPOINT = os.getenv("WG_SERVER_ENDPOINT")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
-PREDEFINED_NAMES = ["Компьютер", "Телефон", "Планшет", "Ноутбук", "Другое"]
+PREDEFINED_NAMES = ["Desktop", "Phone", "Tablet", "Laptop", "Other"]
 
 
 def get_main_keyboard():
@@ -134,7 +134,7 @@ async def select_name(callback: types.CallbackQuery):
 
         await callback.message.edit_text(
             f"Конфиг '{name}' готов!\n\nIP: {client_ip}\n\n"
-            f"Скачайте файл и импортируйте в приложение WireGuard"
+            f"Скачайте файл и импортируйте в приложение AmneziaWG"
         )
 
         await callback.message.answer_document(

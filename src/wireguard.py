@@ -5,7 +5,7 @@ from cryptography.hazmat.primitives import serialization
 
 def generate_keys():
     """
-    Генерация пары ключей WireGuard (приватный, публичный)
+    Генерация пары ключей AmneziaWG (приватный, публичный)
 
     Returns:
         tuple: (private_key, public_key)

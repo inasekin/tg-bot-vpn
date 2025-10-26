@@ -2,13 +2,25 @@
 
 set -e
 
-echo "Деплоим..."
+echo "Деплоим VPN бот..."
 
-echo "Останавливаем контейнер..."
-docker-compose down
-echo "Собираем образ..."
-docker-compose build
-echo "Запускаем ..."
-docker-compose up -d
-echo ""
-echo "Хоп, собрался!"
+echo "Останавливаем бота..."
+pkill -f "python.*src/main.py" || true
+
+echo "Обновляем зависимости..."
+uv sync
+
+echo "Запускаем бота..."
+nohup uv run python src/main.py > bot.log 2>&1 &
+
+sleep 2
+
+if pgrep -f "python.*src/main.py" > /dev/null; then
+    echo ""
+    echo "✓ Бот успешно запущен!"
+    echo "Логи: tail -f bot.log"
+else
+    echo ""
+    echo "✗ Ошибка запуска! Проверьте логи: cat bot.log"
+    exit 1
+fi

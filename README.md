@@ -18,23 +18,89 @@ Telegram-бот для управления VPN конфигурациями ч�
 
 ## Требования
 
-- Python 3.9 или выше
+- Python 3.11 или выше
 - AmneziaWG установлен на сервере
 - Telegram Bot Token
-- Docker (опционально)
+- uv (менеджер пакетов Python)
 
 ## Установка
 
-### С использованием uv
+### 1. Установка AmneziaWG на сервере
 
 ```bash
-uv sync
+# Установите зависимости
+sudo apt update
+sudo apt install -y build-essential git linux-headers-$(uname -r) pkg-config libmnl-dev
+
+# Установите модуль ядра AmneziaWG
+cd /root
+git clone https://github.com/amnezia-vpn/amneziawg-linux-kernel-module
+cd amneziawg-linux-kernel-module/src
+sudo make && sudo make install
+sudo modprobe amneziawg
+
+# Установите awg-tools
+cd /root
+git clone https://github.com/amnezia-vpn/amneziawg-tools
+cd amneziawg-tools/src
+sudo make && sudo make install
+
+# Создайте конфигурацию сервера
+sudo mkdir -p /etc/amnezia/amneziawg
+sudo nano /etc/amnezia/amneziawg/wg0.conf
 ```
 
-### С использованием pip
+Пример конфигурации сервера (замените PrivateKey на свой):
+
+```ini
+[Interface]
+Address = 10.0.0.1/24
+ListenPort = 51820
+PrivateKey = YOUR_PRIVATE_KEY_HERE
+Jc = 5
+Jmin = 50
+Jmax = 1000
+S1 = 86
+S2 = 123
+H1 = 1234567
+H2 = 2345678
+H3 = 3456789
+H4 = 4567890
+PostUp = sysctl -w net.ipv4.ip_forward=1
+PostUp = iptables -I DOCKER-USER 1 -i wg0 -j ACCEPT
+PostUp = iptables -I DOCKER-USER 1 -o wg0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+PostUp = iptables -t nat -A POSTROUTING -s 10.0.0.0/24 -o eth0 -j MASQUERADE
+PostUp = iptables -t mangle -A FORWARD -i wg0 -o eth0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostDown = iptables -D DOCKER-USER -i wg0 -j ACCEPT
+PostDown = iptables -D DOCKER-USER -o wg0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+PostDown = iptables -t nat -D POSTROUTING -s 10.0.0.0/24 -o eth0 -j MASQUERADE
+PostDown = iptables -t mangle -D FORWARD -i wg0 -o eth0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+```
+
+Запуск AmneziaWG:
 
 ```bash
-pip install -r requirements.txt
+# Запустите вручную
+sudo awg-quick up /etc/amnezia/amneziawg/wg0.conf
+
+# Или настройте автозапуск через systemd
+sudo systemctl enable awg-quick@wg0
+sudo systemctl start awg-quick@wg0
+```
+
+### 2. Установка бота
+
+```bash
+# Установите uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+
+# Клонируйте репозиторий
+git clone https://github.com/yourusername/tg-bot-vpn
+cd tg-bot-vpn
+
+# Установите зависимости
+uv sync
 ```
 
 ## Конфигурация
@@ -50,8 +116,24 @@ ADMIN_ID=your_telegram_user_id
 
 ## Запуск
 
+### Запуск в фоновом режиме
+
 ```bash
-uv run python src/main.py
+# Запустите бота
+nohup uv run python src/main.py > bot.log 2>&1 &
+
+# Проверьте логи
+tail -f bot.log
+
+# Остановите бота
+pkill -f "python.*src/main.py"
+```
+
+### Быстрый деплой
+
+```bash
+# Используйте скрипт деплоя
+bash scripts/deploy.sh
 ```
 
 ## Команды бота

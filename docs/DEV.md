@@ -38,12 +38,12 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### WireGuard сервер
+### AmneziaWG сервер
 
-Для локальной разработки вам нужен WireGuard сервер. Вы можете использовать:
+Для локальной разработки вам нужен AmneziaWG сервер. Вы можете использовать:
 
-1. Реальный VPS с WireGuard
-2. Docker контейнер с WireGuard (линвх/нижний уровень)
+1. Реальный VPS с AmneziaWG
+2. Docker контейнер с AmneziaWG (линвх/нижний уровень)
 3. Virtualbox виртуальную машину
 
 ### Структура БД

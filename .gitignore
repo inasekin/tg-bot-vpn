@@ -213,3 +213,7 @@ __marimo__/
 *.db
 *.sqlite
 *.sqlite3
+
+# Bot logs
+bot.log
+nohup.out
