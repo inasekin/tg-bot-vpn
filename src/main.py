@@ -36,6 +36,7 @@ def get_main_keyboard():
             [KeyboardButton(text="Получить VPN")],
             [KeyboardButton(text="Мой профиль")],
             [KeyboardButton(text="Управлять VPN")],
+            [KeyboardButton(text="Инструкция")],
         ],
         resize_keyboard=True,
     )
@@ -282,6 +283,71 @@ async def show_profile(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка в show_profile: {e}")
         await message.answer("Произошла ошибка при получении профиля. Попробуйте снова.")
+
+
+@dp.message(F.text == "Инструкция")
+async def show_instructions(message: types.Message):
+    try:
+        logger.info(f"User {message.from_user.id} pressed 'Инструкция'")
+        
+        instruction_text = (
+            "<b>📱 Инструкция по установке WireGuard VPN</b>\n\n"
+            
+            "<b>Шаг 1: Скачайте приложение WireGuard</b>\n\n"
+            
+            "<b>Android:</b>\n"
+            "• Google Play: https://play.google.com/store/apps/details?id=com.wireguard.android\n\n"
+            
+            "<b>iOS:</b>\n"
+            "• App Store: https://apps.apple.com/us/app/wireguard/id1441195209\n\n"
+            
+            "<b>Windows:</b>\n"
+            "• https://download.wireguard.com/windows-client/wireguard-installer.exe\n\n"
+            
+            "<b>macOS:</b>\n"
+            "• App Store: https://apps.apple.com/us/app/wireguard/id1451685025\n"
+            "• Или: https://download.wireguard.com/macos-client/\n\n"
+            
+            "<b>Linux:</b>\n"
+            "• Ubuntu/Debian: <code>sudo apt install wireguard</code>\n"
+            "• Fedora: <code>sudo dnf install wireguard-tools</code>\n\n"
+            
+            "<b>Шаг 2: Получите конфигурацию</b>\n"
+            "1. Нажмите кнопку 'Получить VPN' в боте\n"
+            "2. Выберите название устройства\n"
+            "3. Скачайте файл конфигурации (.conf)\n\n"
+            
+            "<b>Шаг 3: Импортируйте конфигурацию</b>\n\n"
+            
+            "<b>Мобильные устройства (Android/iOS):</b>\n"
+            "1. Откройте приложение WireGuard\n"
+            "2. Нажмите '+' (добавить туннель)\n"
+            "3. Выберите 'Создать из файла' или 'Импорт из файла'\n"
+            "4. Найдите скачанный .conf файл\n"
+            "5. Нажмите 'Сохранить'\n\n"
+            
+            "<b>Компьютер (Windows/macOS):</b>\n"
+            "1. Откройте приложение WireGuard\n"
+            "2. Нажмите 'Импортировать туннель(и) из файла'\n"
+            "3. Выберите скачанный .conf файл\n"
+            "4. Конфигурация будет добавлена\n\n"
+            
+            "<b>Linux:</b>\n"
+            "1. Скопируйте файл в /etc/wireguard/\n"
+            "   <code>sudo cp vpn_*.conf /etc/wireguard/wg0.conf</code>\n"
+            "2. Запустите туннель:\n"
+            "   <code>sudo wg-quick up wg0</code>\n\n"
+            
+            "<b>Шаг 4: Подключитесь к VPN</b>\n"
+            "1. В списке туннелей найдите свою конфигурацию\n"
+            "2. Переключите тумблер в положение 'Включено'\n"
+            "3. Готово! Вы подключены к VPN\n\n"
+        )
+        
+        await message.answer(instruction_text, parse_mode="HTML", disable_web_page_preview=True)
+    except Exception as e:
+        logger.error(f"Ошибка в show_instructions: {e}")
+        await message.answer("Произошла ошибка при загрузке инструкции. Попробуйте снова.")
 
 
 @dp.message(Command("stats"))

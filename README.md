@@ -50,7 +50,7 @@ ADMIN_ID=your_telegram_user_id
 ## Запуск
 
 ```bash
-uv run python main.py
+uv run python src/main.py
 ```
 
 ## Команды бота
