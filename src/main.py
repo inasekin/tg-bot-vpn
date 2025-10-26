@@ -163,12 +163,7 @@ async def manage_vpn(message: types.Message):
             )
             return
 
-        config_list = "\n".join(
-            [
-                f"• {cfg['name']} (IP: {cfg['ip_address']})"
-                for cfg in configs
-            ]
-        )
+        config_list = "\n".join([f"• {cfg['name']} (IP: {cfg['ip_address']})" for cfg in configs])
 
         await message.answer(
             f"Ваши VPN конфигурации:\n\n{config_list}\n\nВыберите действие:",
@@ -237,10 +232,7 @@ async def delete_config(callback: types.CallbackQuery):
         configs = db.get_all_vpn_configs(user_id)
         if configs:
             config_list = "\n".join(
-                [
-                    f"• {cfg['name']} (IP: {cfg['ip_address']})"
-                    for cfg in configs
-                ]
+                [f"• {cfg['name']} (IP: {cfg['ip_address']})" for cfg in configs]
             )
             await callback.message.edit_text(
                 f"Ваши VPN конфигурации:\n\n{config_list}\n\nВыберите действие:",
@@ -272,8 +264,8 @@ async def show_profile(message: types.Message):
         profile_text += f"ID: <code>{user_id}</code>\n"
         profile_text += f"Username: @{user.get('username', 'нет')}\n"
 
-        created_at = user.get('created_at', 'Неизвестно')
-        if created_at and created_at != 'Неизвестно':
+        created_at = user.get("created_at", "Неизвестно")
+        if created_at and created_at != "Неизвестно":
             profile_text += f"Регистрация: {created_at}\n\n"
         else:
             profile_text += "Регистрация: Неизвестно\n\n"
