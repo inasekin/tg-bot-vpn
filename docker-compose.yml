@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   bot:
@@ -16,7 +16,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./data:/app/data
-      - /etc/wireguard:/etc/wireguard
+      - /etc/amnezia/amneziawg:/etc/amnezia/amneziawg
     logging:
       driver: "json-file"
       options:

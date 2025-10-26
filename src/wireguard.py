@@ -30,7 +30,7 @@ def generate_keys():
 
 def create_client_config(private_key, server_public_key, server_endpoint, client_ip):
     """
-    Создание конфигурации клиента
+    Создание конфигурации клиента для AmneziaWG
 
     Args:
         private_key: Приватный ключ клиента
@@ -39,19 +39,28 @@ def create_client_config(private_key, server_public_key, server_endpoint, client
         client_ip: IP адрес клиента в VPN сети (например: 10.0.0.2)
 
     Returns:
-        str: Конфигурация в формате WireGuard
+        str: Конфигурация в формате AmneziaWG
     """
     config = f"""[Interface]
 PrivateKey = {private_key}
 Address = {client_ip}/32
 DNS = 1.1.1.1, 8.8.8.8
-MTU = 1380
+MTU = 1280
+Jc = 5
+Jmin = 50
+Jmax = 1000
+S1 = 86
+S2 = 123
+H1 = 1234567
+H2 = 2345678
+H3 = 3456789
+H4 = 4567890
 
 [Peer]
 PublicKey = {server_public_key}
 Endpoint = {server_endpoint}
 AllowedIPs = 0.0.0.0/0, ::/0
-PersistentKeepalive = 25
+PersistentKeepalive = 10
 """
     return config
 
