@@ -109,6 +109,16 @@ class Database:
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
 
+    def get_vpn_config_by_id(self, config_id, user_id):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM vpn_configs WHERE id = ? AND user_id = ?",
+                (config_id, user_id),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
     def delete_vpn_config(self, user_id, name):
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -118,6 +128,16 @@ class Database:
                 WHERE user_id = ? AND name = ?
             """,
                 (user_id, name),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_vpn_config_by_id(self, config_id, user_id):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM vpn_configs WHERE id = ? AND user_id = ?",
+                (config_id, user_id),
             )
             conn.commit()
             return cursor.rowcount > 0

@@ -1,8 +1,12 @@
 import asyncio
 import logging
 import os
+import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     ReplyKeyboardMarkup,
     KeyboardButton,
@@ -21,13 +25,17 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 bot = Bot(token=os.getenv("BOT_TOKEN"))
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())
 
 SERVER_PUBLIC_KEY = os.getenv("WG_SERVER_PUBLIC_KEY")
 SERVER_ENDPOINT = os.getenv("WG_SERVER_ENDPOINT")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
-PREDEFINED_NAMES = ["Desktop", "Phone", "Tablet", "Laptop", "Other"]
+NAME_PATTERN = re.compile(r'^[\w\s\-]{1,20}$', re.UNICODE)
+
+
+class VpnCreation(StatesGroup):
+    waiting_for_name = State()
 
 
 def get_main_keyboard():
@@ -43,30 +51,23 @@ def get_main_keyboard():
     return keyboard
 
 
-def get_name_selection_keyboard():
-    buttons = [
-        [InlineKeyboardButton(text=name, callback_data=f"select_name_{name}")]
-        for name in PREDEFINED_NAMES
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def get_config_management_keyboard(user_id, configs):
+def get_config_management_keyboard(configs):
     buttons = []
     for config in configs:
         buttons.append(
             [
                 InlineKeyboardButton(
-                    text=f"Скачать {config['name']}", callback_data=f"download_{config['name']}"
+                    text=f"Скачать {config['name']}", callback_data=f"download_{config['id']}"
                 ),
-                InlineKeyboardButton(text="Удалить", callback_data=f"delete_{config['name']}"),
+                InlineKeyboardButton(text="Удалить", callback_data=f"delete_{config['id']}"),
             ]
         )
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 @dp.message(Command("start"))
-async def cmd_start(message: types.Message):
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
     user_id = message.from_user.id
     username = message.from_user.username
     first_name = message.from_user.first_name
@@ -82,36 +83,50 @@ async def cmd_start(message: types.Message):
 
 
 @dp.message(F.text == "Получить VPN")
-async def get_vpn_start(message: types.Message):
+async def get_vpn_start(message: types.Message, state: FSMContext):
     logger.info(f"User {message.from_user.id} pressed 'Получить VPN'")
     user_id = message.from_user.id
-    configs = db.get_all_vpn_configs(user_id)
 
-    if len(configs) >= 5:
-        await message.answer(
-            "Вы уже создали максимум конфигов (5). Удалите один из них чтобы создать новый."
-        )
-        return
+    if user_id != ADMIN_ID:
+        configs = db.get_all_vpn_configs(user_id)
+        if len(configs) >= 5:
+            await message.answer(
+                "Вы уже создали максимум конфигов (5). Удалите один из них чтобы создать новый."
+            )
+            return
 
+    await state.set_state(VpnCreation.waiting_for_name)
     await message.answer(
-        "Выбери название для конфигурации:", reply_markup=get_name_selection_keyboard()
+        "Введите название для новой конфигурации:\n"
+        "(буквы, цифры, пробел, дефис, подчёркивание — до 20 символов)"
     )
 
 
-@dp.callback_query(F.data.startswith("select_name_"))
-async def select_name(callback: types.CallbackQuery):
+@dp.message(VpnCreation.waiting_for_name)
+async def process_vpn_name(message: types.Message, state: FSMContext):
+    name = message.text.strip() if message.text else ""
+
+    if not NAME_PATTERN.match(name):
+        await message.answer(
+            "Недопустимое название. Используйте буквы, цифры, пробел, дефис или подчёркивание "
+            "(до 20 символов). Попробуйте снова:"
+        )
+        return
+
+    await state.clear()
+    user_id = message.from_user.id
+
+    existing_config = db.get_vpn_config(user_id, name)
+    if existing_config:
+        await message.answer(
+            f"Конфиг с названием '{name}' уже существует.\n"
+            "Нажмите 'Получить VPN' и введите другое имя."
+        )
+        return
+
+    await message.answer("Создаю VPN конфигурацию...")
+
     try:
-        user_id = callback.from_user.id
-        name = callback.data.replace("select_name_", "")
-
-        existing_config = db.get_vpn_config(user_id, name)
-        if existing_config:
-            await callback.answer("Конфиг с таким названием уже существует", show_alert=True)
-            return
-
-        await callback.answer()
-        await callback.message.edit_text("Создаю VPN конфигурацию...")
-
         private_key, public_key = generate_keys()
         client_ip = db.get_next_ip()
 
@@ -128,32 +143,30 @@ async def select_name(callback: types.CallbackQuery):
             client_ip=client_ip,
         )
 
+        safe_name = re.sub(r'[^\w\-]', '_', name)
         config_file = types.BufferedInputFile(
-            config_text.encode("utf-8"), filename=f"vpn_{name.lower()}.conf"
+            config_text.encode("utf-8"), filename=f"vpn_{safe_name.lower()}.conf"
         )
 
-        await callback.message.edit_text(
+        await message.answer(
             f"Конфиг '{name}' готов!\n\nIP: {client_ip}\n\n"
             f"Скачайте файл и импортируйте в приложение AmneziaWG"
         )
 
-        await callback.message.answer_document(
+        await message.answer_document(
             config_file, caption=f"Ваша VPN конфигурация для {name}"
         )
 
         logger.info(f"Создан VPN config для user {user_id}, название: {name}, IP: {client_ip}")
     except Exception as e:
         logger.error(f"Ошибка при создании конфига: {e}")
-        await callback.answer("Произошла ошибка при создании конфига", show_alert=True)
-        try:
-            await callback.message.edit_text("Произошла ошибка. Попробуйте снова.")
-        except Exception:
-            pass
+        await message.answer("Произошла ошибка при создании конфига. Попробуйте снова.")
 
 
 @dp.message(F.text == "Управлять VPN")
-async def manage_vpn(message: types.Message):
+async def manage_vpn(message: types.Message, state: FSMContext):
     try:
+        await state.clear()
         logger.info(f"User {message.from_user.id} pressed 'Управлять VPN'")
         user_id = message.from_user.id
         configs = db.get_all_vpn_configs(user_id)
@@ -168,7 +181,7 @@ async def manage_vpn(message: types.Message):
 
         await message.answer(
             f"Ваши VPN конфигурации:\n\n{config_list}\n\nВыберите действие:",
-            reply_markup=get_config_management_keyboard(user_id, configs),
+            reply_markup=get_config_management_keyboard(configs),
         )
     except Exception as e:
         logger.error(f"Ошибка в manage_vpn: {e}")
@@ -179,13 +192,14 @@ async def manage_vpn(message: types.Message):
 async def download_config(callback: types.CallbackQuery):
     try:
         user_id = callback.from_user.id
-        name = callback.data.replace("download_", "")
+        config_id = int(callback.data.replace("download_", ""))
 
-        config = db.get_vpn_config(user_id, name)
+        config = db.get_vpn_config_by_id(config_id, user_id)
         if not config:
             await callback.answer("Конфиг не найден", show_alert=True)
             return
 
+        name = config["name"]
         config_text = create_client_config(
             private_key=config["private_key"],
             server_public_key=SERVER_PUBLIC_KEY,
@@ -193,8 +207,9 @@ async def download_config(callback: types.CallbackQuery):
             client_ip=config["ip_address"],
         )
 
+        safe_name = re.sub(r'[^\w\-]', '_', name)
         config_file = types.BufferedInputFile(
-            config_text.encode("utf-8"), filename=f"vpn_{name.lower()}.conf"
+            config_text.encode("utf-8"), filename=f"vpn_{safe_name.lower()}.conf"
         )
 
         await callback.message.answer_document(
@@ -211,15 +226,16 @@ async def download_config(callback: types.CallbackQuery):
 async def delete_config(callback: types.CallbackQuery):
     try:
         user_id = callback.from_user.id
-        name = callback.data.replace("delete_", "")
+        config_id = int(callback.data.replace("delete_", ""))
 
-        config = db.get_vpn_config(user_id, name)
+        config = db.get_vpn_config_by_id(config_id, user_id)
         if not config:
             await callback.answer("Конфиг не найден", show_alert=True)
             return
 
+        name = config["name"]
         success = remove_peer_from_server(config["public_key"])
-        db.delete_vpn_config(user_id, name)
+        db.delete_vpn_config_by_id(config_id, user_id)
 
         logger.info(f"Удален VPN конфиг {user_id}: {name}")
 
@@ -237,7 +253,7 @@ async def delete_config(callback: types.CallbackQuery):
             )
             await callback.message.edit_text(
                 f"Ваши VPN конфигурации:\n\n{config_list}\n\nВыберите действие:",
-                reply_markup=get_config_management_keyboard(user_id, configs),
+                reply_markup=get_config_management_keyboard(configs),
             )
         else:
             await callback.message.edit_text("Больше нет созданных конфигов.")
@@ -247,8 +263,9 @@ async def delete_config(callback: types.CallbackQuery):
 
 
 @dp.message(F.text == "Мой профиль")
-async def show_profile(message: types.Message):
+async def show_profile(message: types.Message, state: FSMContext):
     try:
+        await state.clear()
         logger.info(f"User {message.from_user.id} pressed 'Мой профиль'")
         user_id = message.from_user.id
 
@@ -286,8 +303,9 @@ async def show_profile(message: types.Message):
 
 
 @dp.message(F.text == "Инструкция")
-async def show_instructions(message: types.Message):
+async def show_instructions(message: types.Message, state: FSMContext):
     try:
+        await state.clear()
         logger.info(f"User {message.from_user.id} pressed 'Инструкция'")
 
         instruction_text = (
@@ -305,7 +323,7 @@ async def show_instructions(message: types.Message):
             "• https://github.com/amnezia-vpn/amnezia-client/releases\n\n"
             "<b>Шаг 2: Получите конфигурацию</b>\n"
             "1. Нажмите кнопку 'Получить VPN' в боте\n"
-            "2. Выберите название устройства\n"
+            "2. Введите название для конфигурации\n"
             "3. Скачайте файл конфигурации (.conf)\n\n"
             "<b>Шаг 3: Импортируйте конфигурацию</b>\n\n"
             "<b>Мобильные устройства (Android/iOS):</b>\n"
