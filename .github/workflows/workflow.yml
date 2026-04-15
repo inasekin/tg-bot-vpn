@@ -51,6 +51,7 @@ jobs:
             git clone https://github.com/inasekin/tg-bot-vpn
           fi
           cd /root/tg-bot-vpn
+          git checkout -- .
           git pull origin main
           chmod +x scripts/deploy.sh
           bash scripts/deploy.sh
