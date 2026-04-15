@@ -31,7 +31,7 @@ SERVER_PUBLIC_KEY = os.getenv("WG_SERVER_PUBLIC_KEY")
 SERVER_ENDPOINT = os.getenv("WG_SERVER_ENDPOINT")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
-NAME_PATTERN = re.compile(r'^[\w\s\-]{1,20}$', re.UNICODE)
+NAME_PATTERN = re.compile(r"^[\w\s\-]{1,20}$", re.UNICODE)
 
 
 class VpnCreation(StatesGroup):
@@ -143,7 +143,7 @@ async def process_vpn_name(message: types.Message, state: FSMContext):
             client_ip=client_ip,
         )
 
-        safe_name = re.sub(r'[^\w\-]', '_', name)
+        safe_name = re.sub(r"[^\w\-]", "_", name)
         config_file = types.BufferedInputFile(
             config_text.encode("utf-8"), filename=f"vpn_{safe_name.lower()}.conf"
         )
@@ -153,9 +153,7 @@ async def process_vpn_name(message: types.Message, state: FSMContext):
             f"Скачайте файл и импортируйте в приложение AmneziaWG"
         )
 
-        await message.answer_document(
-            config_file, caption=f"Ваша VPN конфигурация для {name}"
-        )
+        await message.answer_document(config_file, caption=f"Ваша VPN конфигурация для {name}")
 
         logger.info(f"Создан VPN config для user {user_id}, название: {name}, IP: {client_ip}")
     except Exception as e:
@@ -207,7 +205,7 @@ async def download_config(callback: types.CallbackQuery):
             client_ip=config["ip_address"],
         )
 
-        safe_name = re.sub(r'[^\w\-]', '_', name)
+        safe_name = re.sub(r"[^\w\-]", "_", name)
         config_file = types.BufferedInputFile(
             config_text.encode("utf-8"), filename=f"vpn_{safe_name.lower()}.conf"
         )
