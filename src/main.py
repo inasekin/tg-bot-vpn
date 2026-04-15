@@ -38,6 +38,21 @@ class VpnCreation(StatesGroup):
     waiting_for_name = State()
 
 
+async def delete_previous_messages(message: types.Message, state: FSMContext):
+    """Delete user's button message and previous bot response."""
+    data = await state.get_data()
+    last_msg_id = data.get("last_bot_message_id")
+    if last_msg_id:
+        try:
+            await bot.delete_message(message.chat.id, last_msg_id)
+        except Exception:
+            pass
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
 def get_main_keyboard():
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
@@ -87,19 +102,25 @@ async def get_vpn_start(message: types.Message, state: FSMContext):
     logger.info(f"User {message.from_user.id} pressed 'Получить VPN'")
     user_id = message.from_user.id
 
+    await delete_previous_messages(message, state)
+
     if user_id != ADMIN_ID:
         configs = db.get_all_vpn_configs(user_id)
         if len(configs) >= 5:
-            await message.answer(
-                "Вы уже создали максимум конфигов (5). Удалите один из них чтобы создать новый."
+            sent = await bot.send_message(
+                message.chat.id,
+                "Вы уже создали максимум конфигов (5). Удалите один из них чтобы создать новый.",
             )
+            await state.update_data(last_bot_message_id=sent.message_id)
             return
 
     await state.set_state(VpnCreation.waiting_for_name)
-    await message.answer(
+    sent = await bot.send_message(
+        message.chat.id,
         "Введите название для новой конфигурации:\n"
-        "(буквы, цифры, пробел, дефис, подчёркивание — до 20 символов)"
+        "(буквы, цифры, пробел, дефис, подчёркивание — до 20 символов)",
     )
+    await state.update_data(last_bot_message_id=sent.message_id)
 
 
 @dp.message(VpnCreation.waiting_for_name)
@@ -107,24 +128,31 @@ async def process_vpn_name(message: types.Message, state: FSMContext):
     name = message.text.strip() if message.text else ""
 
     if not NAME_PATTERN.match(name):
-        await message.answer(
+        await delete_previous_messages(message, state)
+        sent = await bot.send_message(
+            message.chat.id,
             "Недопустимое название. Используйте буквы, цифры, пробел, дефис или подчёркивание "
-            "(до 20 символов). Попробуйте снова:"
+            "(до 20 символов). Попробуйте снова:",
         )
+        await state.update_data(last_bot_message_id=sent.message_id)
         return
 
+    await delete_previous_messages(message, state)
     await state.clear()
     user_id = message.from_user.id
 
     existing_config = db.get_vpn_config(user_id, name)
     if existing_config:
-        await message.answer(
+        sent = await bot.send_message(
+            message.chat.id,
             f"Конфиг с названием '{name}' уже существует.\n"
-            "Нажмите 'Получить VPN' и введите другое имя."
+            "Нажмите 'Получить VPN' и введите другое имя.",
         )
+        await state.update_data(last_bot_message_id=sent.message_id)
         return
 
-    await message.answer("Создаю VPN конфигурацию...")
+    sent = await bot.send_message(message.chat.id, "Создаю VPN конфигурацию...")
+    await state.update_data(last_bot_message_id=sent.message_id)
 
     try:
         private_key, public_key = generate_keys()
@@ -148,42 +176,54 @@ async def process_vpn_name(message: types.Message, state: FSMContext):
             config_text.encode("utf-8"), filename=f"vpn_{safe_name.lower()}.conf"
         )
 
-        await message.answer(
+        sent = await bot.send_message(
+            message.chat.id,
             f"Конфиг '{name}' готов!\n\nIP: {client_ip}\n\n"
-            f"Скачайте файл и импортируйте в приложение AmneziaWG"
+            f"Скачайте файл и импортируйте в приложение AmneziaWG",
         )
+        await state.update_data(last_bot_message_id=sent.message_id)
 
-        await message.answer_document(config_file, caption=f"Ваша VPN конфигурация для {name}")
+        await bot.send_document(
+            message.chat.id, config_file, caption=f"Ваша VPN конфигурация для {name}"
+        )
 
         logger.info(f"Создан VPN config для user {user_id}, название: {name}, IP: {client_ip}")
     except Exception as e:
         logger.error(f"Ошибка при создании конфига: {e}")
-        await message.answer("Произошла ошибка при создании конфига. Попробуйте снова.")
+        sent = await bot.send_message(
+            message.chat.id, "Произошла ошибка при создании конфига. Попробуйте снова."
+        )
+        await state.update_data(last_bot_message_id=sent.message_id)
 
 
 @dp.message(F.text == "Управлять VPN")
 async def manage_vpn(message: types.Message, state: FSMContext):
     try:
+        await delete_previous_messages(message, state)
         await state.clear()
         logger.info(f"User {message.from_user.id} pressed 'Управлять VPN'")
         user_id = message.from_user.id
         configs = db.get_all_vpn_configs(user_id)
 
         if not configs:
-            await message.answer(
-                "У вас нет созданных VPN конфигураций. Создайте новый, нажав 'Получить VPN'."
+            sent = await bot.send_message(
+                message.chat.id,
+                "У вас нет созданных VPN конфигураций. Создайте новый, нажав 'Получить VPN'.",
             )
+            await state.update_data(last_bot_message_id=sent.message_id)
             return
 
         config_list = "\n".join([f"• {cfg['name']} (IP: {cfg['ip_address']})" for cfg in configs])
 
-        await message.answer(
+        sent = await bot.send_message(
+            message.chat.id,
             f"Ваши VPN конфигурации:\n\n{config_list}\n\nВыберите действие:",
             reply_markup=get_config_management_keyboard(configs),
         )
+        await state.update_data(last_bot_message_id=sent.message_id)
     except Exception as e:
         logger.error(f"Ошибка в manage_vpn: {e}")
-        await message.answer("Произошла ошибка. Попробуйте снова.")
+        await bot.send_message(message.chat.id, "Произошла ошибка. Попробуйте снова.")
 
 
 @dp.callback_query(F.data.startswith("download_"))
@@ -263,6 +303,7 @@ async def delete_config(callback: types.CallbackQuery):
 @dp.message(F.text == "Мой профиль")
 async def show_profile(message: types.Message, state: FSMContext):
     try:
+        await delete_previous_messages(message, state)
         await state.clear()
         logger.info(f"User {message.from_user.id} pressed 'Мой профиль'")
         user_id = message.from_user.id
@@ -273,7 +314,8 @@ async def show_profile(message: types.Message, state: FSMContext):
         configs = db.get_all_vpn_configs(user_id)
 
         if not user:
-            await message.answer("Ошибка получения профиля")
+            sent = await bot.send_message(message.chat.id, "Ошибка получения профиля")
+            await state.update_data(last_bot_message_id=sent.message_id)
             return
 
         profile_text = "<b>Ваш профиль</b>\n\n"
@@ -294,15 +336,19 @@ async def show_profile(message: types.Message, state: FSMContext):
             profile_text += "VPN конфигурация не создана\n\n"
             profile_text += "Нажмите 'Получить VPN' чтобы создать"
 
-        await message.answer(profile_text, parse_mode="HTML")
+        sent = await bot.send_message(message.chat.id, profile_text, parse_mode="HTML")
+        await state.update_data(last_bot_message_id=sent.message_id)
     except Exception as e:
         logger.error(f"Ошибка в show_profile: {e}")
-        await message.answer("Произошла ошибка при получении профиля. Попробуйте снова.")
+        await bot.send_message(
+            message.chat.id, "Произошла ошибка при получении профиля. Попробуйте снова."
+        )
 
 
 @dp.message(F.text == "Инструкция")
 async def show_instructions(message: types.Message, state: FSMContext):
     try:
+        await delete_previous_messages(message, state)
         await state.clear()
         logger.info(f"User {message.from_user.id} pressed 'Инструкция'")
 
@@ -341,10 +387,15 @@ async def show_instructions(message: types.Message, state: FSMContext):
             "3. Готово! Вы подключены к VPN\n\n"
         )
 
-        await message.answer(instruction_text, parse_mode="HTML", disable_web_page_preview=True)
+        sent = await bot.send_message(
+            message.chat.id, instruction_text, parse_mode="HTML", disable_web_page_preview=True
+        )
+        await state.update_data(last_bot_message_id=sent.message_id)
     except Exception as e:
         logger.error(f"Ошибка в show_instructions: {e}")
-        await message.answer("Произошла ошибка при загрузке инструкции. Попробуйте снова.")
+        await bot.send_message(
+            message.chat.id, "Произошла ошибка при загрузке инструкции. Попробуйте снова."
+        )
 
 
 @dp.message(Command("stats"))
