@@ -132,7 +132,7 @@ pkill -f "python.*src/main.py"
 ### Быстрый деплой
 
 ```bash
-# Используйте скрипт деплоя
+# скрипт деплоя
 bash scripts/deploy.sh
 ```
 
