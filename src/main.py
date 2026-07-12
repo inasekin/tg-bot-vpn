@@ -15,12 +15,12 @@ from aiogram.types import (
 )
 from dotenv import load_dotenv
 
-from database import db
-from wireguard import generate_keys, create_client_config
-from server import add_peer_to_server, remove_peer_from_server
-from config import SERVERS, DEFAULT_SERVER_KEY
-
 load_dotenv()
+
+from database import db  # noqa: E402
+from wireguard import generate_keys, create_client_config  # noqa: E402
+from server import add_peer_to_server, remove_peer_from_server  # noqa: E402
+from config import SERVERS, DEFAULT_SERVER_KEY  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
