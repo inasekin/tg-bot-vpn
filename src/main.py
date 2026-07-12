@@ -226,9 +226,7 @@ async def process_vpn_name(message: types.Message, state: FSMContext):
 
         success = add_peer_to_server(server, public_key, client_ip)
         if not success:
-            logger.warning(
-                f"Не удалось связать пользователя с сервером {user_id} ({server.key})"
-            )
+            logger.warning(f"Не удалось связать пользователя с сервером {user_id} ({server.key})")
 
         config_text = create_client_config(
             private_key=private_key,
