@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from database import db
 from wireguard import generate_keys, create_client_config
 from server import add_peer_to_server, remove_peer_from_server
+from config import SERVERS, DEFAULT_SERVER_KEY
 
 load_dotenv()
 
@@ -27,14 +28,19 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=os.getenv("BOT_TOKEN"))
 dp = Dispatcher(storage=MemoryStorage())
 
-SERVER_PUBLIC_KEY = os.getenv("WG_SERVER_PUBLIC_KEY")
-SERVER_ENDPOINT = os.getenv("WG_SERVER_ENDPOINT")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
+
+if not SERVERS:
+    raise RuntimeError(
+        "Не настроен ни один VPN-сервер. Проверьте переменные WG_SERVERS и "
+        "WG_SERVER_PUBLIC_KEY_*/WG_SERVER_ENDPOINT_* в .env"
+    )
 
 NAME_PATTERN = re.compile(r"^[\w\s\-]{1,20}$", re.UNICODE)
 
 
 class VpnCreation(StatesGroup):
+    waiting_for_server = State()
     waiting_for_name = State()
 
 
@@ -80,6 +86,14 @@ def get_config_management_keyboard(configs):
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+def get_server_choice_keyboard():
+    buttons = [
+        [InlineKeyboardButton(text=srv.label, callback_data=f"srv_{srv.key}")]
+        for srv in SERVERS.values()
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -114,6 +128,17 @@ async def get_vpn_start(message: types.Message, state: FSMContext):
             await state.update_data(last_bot_message_id=sent.message_id)
             return
 
+    if len(SERVERS) > 1:
+        await state.set_state(VpnCreation.waiting_for_server)
+        sent = await bot.send_message(
+            message.chat.id,
+            "Выберите сервер (страну):",
+            reply_markup=get_server_choice_keyboard(),
+        )
+        await state.update_data(last_bot_message_id=sent.message_id)
+        return
+
+    await state.update_data(server=DEFAULT_SERVER_KEY)
     await state.set_state(VpnCreation.waiting_for_name)
     sent = await bot.send_message(
         message.chat.id,
@@ -121,6 +146,28 @@ async def get_vpn_start(message: types.Message, state: FSMContext):
         "(буквы, цифры, пробел, дефис, подчёркивание — до 20 символов)",
     )
     await state.update_data(last_bot_message_id=sent.message_id)
+
+
+@dp.callback_query(VpnCreation.waiting_for_server, F.data.startswith("srv_"))
+async def process_server_choice(callback: types.CallbackQuery, state: FSMContext):
+    server_key = callback.data.replace("srv_", "")
+    if server_key not in SERVERS:
+        await callback.answer("Сервер недоступен", show_alert=True)
+        return
+
+    await state.update_data(server=server_key)
+    await state.set_state(VpnCreation.waiting_for_name)
+
+    try:
+        await callback.message.edit_text(
+            f"Сервер: {SERVERS[server_key].label}\n\n"
+            "Введите название для новой конфигурации:\n"
+            "(буквы, цифры, пробел, дефис, подчёркивание — до 20 символов)"
+        )
+    except Exception:
+        pass
+    await state.update_data(last_bot_message_id=callback.message.message_id)
+    await callback.answer()
 
 
 @dp.message(VpnCreation.waiting_for_name)
@@ -133,6 +180,18 @@ async def process_vpn_name(message: types.Message, state: FSMContext):
             message.chat.id,
             "Недопустимое название. Используйте буквы, цифры, пробел, дефис или подчёркивание "
             "(до 20 символов). Попробуйте снова:",
+        )
+        await state.update_data(last_bot_message_id=sent.message_id)
+        return
+
+    data = await state.get_data()
+    server_key = data.get("server", DEFAULT_SERVER_KEY)
+    server = SERVERS.get(server_key)
+    if not server:
+        await delete_previous_messages(message, state)
+        await state.clear()
+        sent = await bot.send_message(
+            message.chat.id, "Сервер недоступен. Нажмите 'Получить VPN' ещё раз."
         )
         await state.update_data(last_bot_message_id=sent.message_id)
         return
@@ -156,18 +215,20 @@ async def process_vpn_name(message: types.Message, state: FSMContext):
 
     try:
         private_key, public_key = generate_keys()
-        client_ip = db.get_next_ip()
+        client_ip = db.get_next_ip(server.key, server.subnet_prefix)
 
-        db.add_vpn_config(user_id, name, private_key, public_key, client_ip)
+        db.add_vpn_config(user_id, name, private_key, public_key, client_ip, server.key)
 
-        success = add_peer_to_server(public_key, client_ip)
+        success = add_peer_to_server(server, public_key, client_ip)
         if not success:
-            logger.warning(f"Не удалось связать пользователя с сервером {user_id}")
+            logger.warning(
+                f"Не удалось связать пользователя с сервером {user_id} ({server.key})"
+            )
 
         config_text = create_client_config(
             private_key=private_key,
-            server_public_key=SERVER_PUBLIC_KEY,
-            server_endpoint=SERVER_ENDPOINT,
+            server_public_key=server.public_key,
+            server_endpoint=server.endpoint,
             client_ip=client_ip,
         )
 
@@ -178,8 +239,8 @@ async def process_vpn_name(message: types.Message, state: FSMContext):
 
         sent = await bot.send_message(
             message.chat.id,
-            f"Конфиг '{name}' готов!\n\nIP: {client_ip}\n\n"
-            f"Скачайте файл и импортируйте в приложение AmneziaWG",
+            f"Конфиг '{name}' готов!\n\nСервер: {server.label}\nIP: {client_ip}\n\n"
+            f"Скачайте файл и импортируйте в приложение AmneziaVPN",
         )
         await state.update_data(last_bot_message_id=sent.message_id)
 
@@ -187,7 +248,10 @@ async def process_vpn_name(message: types.Message, state: FSMContext):
             message.chat.id, config_file, caption=f"Ваша VPN конфигурация для {name}"
         )
 
-        logger.info(f"Создан VPN config для user {user_id}, название: {name}, IP: {client_ip}")
+        logger.info(
+            f"Создан VPN config для user {user_id}, название: {name}, "
+            f"сервер: {server.key}, IP: {client_ip}"
+        )
     except Exception as e:
         logger.error(f"Ошибка при создании конфига: {e}")
         sent = await bot.send_message(
@@ -213,7 +277,13 @@ async def manage_vpn(message: types.Message, state: FSMContext):
             await state.update_data(last_bot_message_id=sent.message_id)
             return
 
-        config_list = "\n".join([f"• {cfg['name']} (IP: {cfg['ip_address']})" for cfg in configs])
+        config_list = "\n".join(
+            [
+                f"• {cfg['name']} (IP: {cfg['ip_address']}, "
+                f"{SERVERS[cfg['server']].label if cfg['server'] in SERVERS else cfg['server']})"
+                for cfg in configs
+            ]
+        )
 
         sent = await bot.send_message(
             message.chat.id,
@@ -237,11 +307,16 @@ async def download_config(callback: types.CallbackQuery):
             await callback.answer("Конфиг не найден", show_alert=True)
             return
 
+        server = SERVERS.get(config["server"])
+        if not server:
+            await callback.answer("Сервер этого конфига больше недоступен", show_alert=True)
+            return
+
         name = config["name"]
         config_text = create_client_config(
             private_key=config["private_key"],
-            server_public_key=SERVER_PUBLIC_KEY,
-            server_endpoint=SERVER_ENDPOINT,
+            server_public_key=server.public_key,
+            server_endpoint=server.endpoint,
             client_ip=config["ip_address"],
         )
 
@@ -251,7 +326,7 @@ async def download_config(callback: types.CallbackQuery):
         )
 
         await callback.message.answer_document(
-            config_file, caption=f"Конфиг '{name}' (IP: {config['ip_address']})"
+            config_file, caption=f"Конфиг '{name}' (IP: {config['ip_address']}, {server.label})"
         )
         await callback.answer()
         logger.info(f"User {user_id} downloaded config {name}")
@@ -272,7 +347,15 @@ async def delete_config(callback: types.CallbackQuery):
             return
 
         name = config["name"]
-        success = remove_peer_from_server(config["public_key"])
+        server = SERVERS.get(config["server"])
+        if server:
+            success = remove_peer_from_server(server, config["public_key"])
+        else:
+            logger.warning(
+                f"Сервер '{config['server']}' для конфига {config_id} не настроен, "
+                "удаляю только из базы"
+            )
+            success = False
         db.delete_vpn_config_by_id(config_id, user_id)
 
         logger.info(f"Удален VPN конфиг {user_id}: {name}")
@@ -287,7 +370,11 @@ async def delete_config(callback: types.CallbackQuery):
         configs = db.get_all_vpn_configs(user_id)
         if configs:
             config_list = "\n".join(
-                [f"• {cfg['name']} (IP: {cfg['ip_address']})" for cfg in configs]
+                [
+                    f"• {cfg['name']} (IP: {cfg['ip_address']}, "
+                    f"{SERVERS[cfg['server']].label if cfg['server'] in SERVERS else cfg['server']})"
+                    for cfg in configs
+                ]
             )
             await callback.message.edit_text(
                 f"Ваши VPN конфигурации:\n\n{config_list}\n\nВыберите действие:",
@@ -331,7 +418,8 @@ async def show_profile(message: types.Message, state: FSMContext):
         if configs:
             profile_text += "<b>Ваши VPN конфигурации:</b>\n"
             for cfg in configs:
-                profile_text += f"• {cfg['name']} (IP: {cfg['ip_address']})\n"
+                srv_label = SERVERS[cfg["server"]].label if cfg["server"] in SERVERS else cfg["server"]
+                profile_text += f"• {cfg['name']} (IP: {cfg['ip_address']}, {srv_label})\n"
         else:
             profile_text += "VPN конфигурация не создана\n\n"
             profile_text += "Нажмите 'Получить VPN' чтобы создать"

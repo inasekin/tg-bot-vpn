@@ -1,46 +1,89 @@
 import subprocess
 import logging
 
+from config import ServerConfig
+
 logger = logging.getLogger(__name__)
 
+SSH_TIMEOUT = 15
 
-def add_peer_to_server(public_key, allowed_ip):
+
+def _build_command(server: ServerConfig, remote_args: list) -> list:
     """
-    Добавить пира на AmneziaWG сервер
+    Строит итоговую команду для запуска: локально либо через SSH на удалённый сервер.
+    remote_args — список аргументов команды, которая должна выполниться НА сервере.
     """
+    if not server.is_remote:
+        return remote_args
+
+    if not server.ssh_key_path:
+        raise RuntimeError(
+            f"Для удалённого сервера '{server.key}' не задан WG_SERVER_SSH_KEY_{server.key.upper()}"
+        )
+
+    remote_cmd = " ".join(remote_args)
+    return [
+        "ssh",
+        "-i",
+        server.ssh_key_path,
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        f"ConnectTimeout={SSH_TIMEOUT}",
+        f"{server.ssh_user}@{server.ssh_host}",
+        remote_cmd,
+    ]
+
+
+def _run(server: ServerConfig, remote_args: list, label: str) -> bool:
+    cmd = _build_command(server, remote_args)
     try:
-        cmd = ["awg", "set", "wg0", "peer", public_key, "allowed-ips", f"{allowed_ip}/32"]
-
-        subprocess.run(cmd, capture_output=True, text=True, check=True)
-        logger.info(f"Добавлен пир {public_key[:8]}... с IP {allowed_ip}/32")
-
-        subprocess.run(["awg-quick", "save", "wg0"], check=True)
-
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=True, timeout=SSH_TIMEOUT
+        )
+        logger.info(f"[{server.key}] {label}: OK ({result.stdout.strip()[:200]})")
         return True
     except subprocess.CalledProcessError as e:
-        logger.error(f"Ошибка с добавлением: {e.stderr}")
+        logger.error(f"[{server.key}] {label}: ошибка — {e.stderr.strip()}")
+        return False
+    except subprocess.TimeoutExpired:
+        logger.error(f"[{server.key}] {label}: таймаут выполнения команды")
         return False
     except FileNotFoundError:
-        logger.warning("AmneziaWG не детектится")
+        logger.warning(f"[{server.key}] {label}: команда не найдена (awg/ssh не установлен?)")
+        return False
+    except RuntimeError as e:
+        logger.error(f"[{server.key}] {label}: {e}")
         return False
 
 
-def remove_peer_from_server(public_key):
+def add_peer_to_server(server: ServerConfig, public_key: str, allowed_ip: str) -> bool:
     """
-    Удалить пира с AmneziaWG сервера
+    Добавить пира на AmneziaWG сервер (локально или удалённо по SSH).
     """
-    try:
-        cmd = ["awg", "set", "wg0", "peer", public_key, "remove"]
-
-        subprocess.run(cmd, capture_output=True, text=True, check=True)
-        logger.info(f"Удаляем peer {public_key[:8]}...")
-
-        subprocess.run(["awg-quick", "save", "wg0"], check=True)
-
-        return True
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Ошибка с удалением peer: {e.stderr}")
+    set_args = [
+        "awg",
+        "set",
+        server.interface,
+        "peer",
+        public_key,
+        "allowed-ips",
+        f"{allowed_ip}/32",
+    ]
+    if not _run(server, set_args, "добавление пира"):
         return False
-    except FileNotFoundError:
-        logger.warning("AmneziaWG не детектится")
+
+    save_args = ["awg-quick", "save", server.interface]
+    return _run(server, save_args, "сохранение конфига")
+
+
+def remove_peer_from_server(server: ServerConfig, public_key: str) -> bool:
+    """
+    Удалить пира с AmneziaWG сервера (локально или удалённо по SSH).
+    """
+    remove_args = ["awg", "set", server.interface, "peer", public_key, "remove"]
+    if not _run(server, remove_args, "удаление пира"):
         return False
+
+    save_args = ["awg-quick", "save", server.interface]
+    return _run(server, save_args, "сохранение конфига")

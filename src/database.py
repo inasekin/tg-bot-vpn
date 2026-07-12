@@ -39,12 +39,22 @@ class Database:
                     private_key TEXT NOT NULL,
                     public_key TEXT NOT NULL,
                     ip_address TEXT NOT NULL,
+                    server TEXT NOT NULL DEFAULT 'ru',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users(user_id),
                     UNIQUE(user_id, name)
                 )
             """
             )
+
+            # Миграция для баз, созданных до появления мультисерверности:
+            # добавляем колонку server, если её ещё нет.
+            cursor.execute("PRAGMA table_info(vpn_configs)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "server" not in columns:
+                cursor.execute(
+                    "ALTER TABLE vpn_configs ADD COLUMN server TEXT NOT NULL DEFAULT 'ru'"
+                )
 
             conn.commit()
 
@@ -69,15 +79,15 @@ class Database:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def add_vpn_config(self, user_id, name, private_key, public_key, ip_address):
+    def add_vpn_config(self, user_id, name, private_key, public_key, ip_address, server="ru"):
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO vpn_configs (user_id, name, private_key, public_key, ip_address)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO vpn_configs (user_id, name, private_key, public_key, ip_address, server)
+                VALUES (?, ?, ?, ?, ?, ?)
             """,
-                (user_id, name, private_key, public_key, ip_address),
+                (user_id, name, private_key, public_key, ip_address, server),
             )
             conn.commit()
             return cursor.lastrowid
@@ -142,23 +152,37 @@ class Database:
             conn.commit()
             return cursor.rowcount > 0
 
-    def get_next_ip(self):
+    def get_next_ip(self, server="ru", subnet_prefix="10.0.0."):
+        """
+        Возвращает следующий свободный IP в подсети конкретного сервера.
+
+        Args:
+            server: ключ сервера ("ru", "us", ...)
+            subnet_prefix: префикс подсети этого сервера, например "10.0.0." или "10.0.1."
+        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT ip_address FROM vpn_configs ORDER BY id DESC LIMIT 1")
+            cursor.execute(
+                """
+                SELECT ip_address FROM vpn_configs
+                WHERE server = ?
+                ORDER BY id DESC LIMIT 1
+            """,
+                (server,),
+            )
             row = cursor.fetchone()
 
             if not row:
-                return "10.0.0.2"
+                return f"{subnet_prefix}2"
 
             last_ip = row["ip_address"]
             parts = last_ip.split(".")
             last_octet = int(parts[3]) + 1
 
             if last_octet > 254:
-                raise Exception("IP адреса закончились")
+                raise Exception(f"IP адреса на сервере '{server}' закончились")
 
-            return f"10.0.0.{last_octet}"
+            return f"{subnet_prefix}{last_octet}"
 
 
 db = Database()
