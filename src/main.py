@@ -94,6 +94,11 @@ def get_server_choice_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+def get_server_label(server_key):
+    server = SERVERS.get(server_key)
+    return server.label if server else server_key
+
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -279,8 +284,7 @@ async def manage_vpn(message: types.Message, state: FSMContext):
 
         config_list = "\n".join(
             [
-                f"• {cfg['name']} (IP: {cfg['ip_address']}, "
-                f"{SERVERS[cfg['server']].label if cfg['server'] in SERVERS else cfg['server']})"
+                f"• {cfg['name']} (IP: {cfg['ip_address']}, {get_server_label(cfg['server'])})"
                 for cfg in configs
             ]
         )
@@ -371,8 +375,7 @@ async def delete_config(callback: types.CallbackQuery):
         if configs:
             config_list = "\n".join(
                 [
-                    f"• {cfg['name']} (IP: {cfg['ip_address']}, "
-                    f"{SERVERS[cfg['server']].label if cfg['server'] in SERVERS else cfg['server']})"
+                    f"• {cfg['name']} (IP: {cfg['ip_address']}, {get_server_label(cfg['server'])})"
                     for cfg in configs
                 ]
             )
@@ -418,7 +421,7 @@ async def show_profile(message: types.Message, state: FSMContext):
         if configs:
             profile_text += "<b>Ваши VPN конфигурации:</b>\n"
             for cfg in configs:
-                srv_label = SERVERS[cfg["server"]].label if cfg["server"] in SERVERS else cfg["server"]
+                srv_label = get_server_label(cfg["server"])
                 profile_text += f"• {cfg['name']} (IP: {cfg['ip_address']}, {srv_label})\n"
         else:
             profile_text += "VPN конфигурация не создана\n\n"
@@ -527,7 +530,7 @@ async def echo_handler(message: types.Message):
 
 async def main():
     logger.info("Бот запускается...")
-    logger.info(f"Server endpoint: {SERVER_ENDPOINT}")
+    logger.info(f"Настроенные серверы: {', '.join(SERVERS.keys())}")
     await dp.start_polling(bot)
 
 
