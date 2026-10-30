@@ -88,7 +88,7 @@ sudo systemctl enable awg-quick@wg0
 sudo systemctl start awg-quick@wg0
 ```
 
-### 2. Установка бота
+### 2. Установка
 
 ```bash
 # Установите uv
