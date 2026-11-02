@@ -1,6 +1,9 @@
 import base64
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
+from config import AwgParams
 
 
 def generate_keys():
@@ -27,40 +30,40 @@ def generate_keys():
 
     return private_key, public_key
 
-def create_client_config(private_key, server_public_key, server_endpoint, client_ip):
-    config = f"""[Interface]
-PrivateKey = {private_key}
-Address = {client_ip}/32
-DNS = 1.1.1.1, 8.8.8.8
-MTU = 1280
-Jc = 5
-Jmin = 50
-Jmax = 1000
-S1 = 86
-S2 = 123
-S3 = 45
-S4 = 67
-H1 = 1234567-1235567
-H2 = 2345678-2346678
-H3 = 3456789-3457789
-H4 = 4567890-4568890
-HeaderProtectionKey = 8f3a2b1c9d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789ab
-ContentPaddingAddition = 20-80
-RandomTrailers = on
-DisableCookies = off
-RekeyAfterTime = 100-120
-RekeyTimeout = 3-7
-RejectAfterTime = 150-180
-KeepaliveTimeout = 5-15
-MaxHandshakeAttempts = 15-20
 
-[Peer]
-PublicKey = {server_public_key}
-Endpoint = {server_endpoint}
-AllowedIPs = 0.0.0.0/0, ::/0
-PersistentKeepalive = 10
-"""
-    return config
+def create_client_config(private_key, server_public_key, server_endpoint, client_ip, awg):
+    """
+    Создание конфигурации клиента для AmneziaWG.
+
+    Args:
+        private_key: приватный ключ клиента
+        server_public_key: публичный ключ сервера
+        server_endpoint: IP:порт сервера (например: 1.2.3.4:51820)
+        client_ip: IP адрес клиента в VPN сети (например: 10.0.0.2)
+        awg: AwgParams сервера. S1-S4, H1-H4 и HeaderProtectionKey обязаны совпадать
+             с конфигом сервера, иначе рукопожатие не пройдёт.
+
+    Returns:
+        str: конфигурация в формате AmneziaWG
+    """
+    interface_lines = [
+        f"PrivateKey = {private_key}",
+        f"Address = {client_ip}/32",
+        "DNS = 1.1.1.1, 8.8.8.8",
+        "MTU = 1280",
+    ]
+    interface_lines += [f"{k} = {v}" for k, v in awg.interface_items()]
+
+    return (
+        "[Interface]\n"
+        + "\n".join(interface_lines)
+        + "\n\n[Peer]\n"
+        + f"PublicKey = {server_public_key}\n"
+        + f"Endpoint = {server_endpoint}\n"
+        + "AllowedIPs = 0.0.0.0/0, ::/0\n"
+        + "PersistentKeepalive = 10\n"
+    )
+
 
 if __name__ == "__main__":
     print("Генерация ключей...")
@@ -74,5 +77,6 @@ if __name__ == "__main__":
         server_public_key="SERVER_PUBLIC_KEY_HERE",
         server_endpoint="1.2.3.4:51820",
         client_ip="10.0.0.2",
+        awg=AwgParams(),
     )
     print(config)

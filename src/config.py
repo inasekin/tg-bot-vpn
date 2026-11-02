@@ -1,14 +1,114 @@
 import os
-from dataclasses import dataclass
-from typing import Optional
+import re
+from dataclasses import dataclass, field
+from typing import Dict, Optional
+
+# Параметры обфускации AmneziaWG, которые попадают в секцию [Interface] клиентского
+# конфига. Порядок словаря = порядок строк в конфиге.
+#
+# Server-side (ОБЯЗАНЫ совпадать с awg-конфигом сервера): S1-S4, H1-H4, HeaderProtectionKey.
+# Client-side (могут отличаться): Jc, Jmin, Jmax, ContentPaddingAddition и тайминги.
+#
+# Любой параметр переопределяется per-server переменной WG_SERVER_<ИМЯ>_<KEY>,
+# например WG_SERVER_H1_NL=100-200. Пустое значение (WG_SERVER_S3_US=) убирает
+# параметр из конфига — нужно для серверов на старой версии AmneziaWG.
+AWG_DEFAULTS: Dict[str, str] = {
+    "Jc": "5",
+    "Jmin": "50",
+    "Jmax": "1000",
+    "S1": "86",
+    "S2": "123",
+    "S3": "45",
+    "S4": "67",
+    "H1": "1234567-1235567",
+    "H2": "2345678-2346678",
+    "H3": "3456789-3457789",
+    "H4": "4567890-4568890",
+    # Ключ генерируется на сервере (`awg genkey`) и является секретом — только через .env.
+    "HeaderProtectionKey": "",
+    "ContentPaddingAddition": "20-80",
+    "RekeyAfterTime": "100-120",
+    "RekeyTimeout": "3-7",
+    "RejectAfterTime": "150-180",
+    "KeepaliveTimeout": "5-15",
+    "MaxHandshakeAttempts": "15-20",
+}
+
+_INT_PARAMS = ("Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4")
+_RANGE_RE = re.compile(r"^(\d+)(?:-(\d+))?$")
+
+
+def _env_name(param: str) -> str:
+    """HeaderProtectionKey -> HEADER_PROTECTION_KEY, Jmin -> JMIN, H1 -> H1."""
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", param).upper()
+
+
+def _parse_range(value: str):
+    m = _RANGE_RE.match(value)
+    if not m:
+        raise ValueError(f"ожидается число или диапазон 'x-y', получено '{value}'")
+    lo = int(m.group(1))
+    hi = int(m.group(2)) if m.group(2) is not None else lo
+    if lo > hi:
+        raise ValueError(f"в диапазоне '{value}' начало больше конца")
+    return lo, hi
+
+
+@dataclass
+class AwgParams:
+    """Параметры обфускации AmneziaWG одного сервера."""
+
+    values: Dict[str, str] = field(default_factory=lambda: dict(AWG_DEFAULTS))
+
+    def interface_items(self):
+        """Пары (ключ, значение) для [Interface], пустые значения пропускаются."""
+        return [(k, v) for k, v in self.values.items() if v != ""]
+
+    def validate(self, server_key: str = "?") -> None:
+        v = {k: val for k, val in self.values.items() if val != ""}
+        try:
+            for name in _INT_PARAMS:
+                if name in v and not v[name].isdigit():
+                    raise ValueError(f"{name} должен быть целым числом, получено '{v[name]}'")
+
+            if "Jmin" in v and "Jmax" in v and int(v["Jmin"]) > int(v["Jmax"]):
+                raise ValueError("Jmin должен быть <= Jmax")
+
+            h_ranges = []
+            for name in ("H1", "H2", "H3", "H4"):
+                if name in v:
+                    h_ranges.append((name, *_parse_range(v[name])))
+            h_ranges.sort(key=lambda r: r[1])
+            for prev, cur in zip(h_ranges, h_ranges[1:]):
+                if cur[1] <= prev[2]:
+                    raise ValueError(f"диапазоны {prev[0]} и {cur[0]} пересекаются")
+
+            if "HeaderProtectionKey" in v:
+                for name in ("S1", "S2", "S3", "S4"):
+                    if int(v.get(name, "0")) < 12:
+                        raise ValueError(
+                            f"HeaderProtectionKey требует S1-S4 >= 12, а {name}={v.get(name, 0)}"
+                        )
+        except ValueError as e:
+            raise ValueError(f"Некорректные AWG-параметры сервера '{server_key}': {e}") from e
+
+    @classmethod
+    def from_env(cls, server_key: str) -> "AwgParams":
+        values = {
+            param: _getenv_for(f"WG_SERVER_{_env_name(param)}", server_key, default).strip()
+            for param, default in AWG_DEFAULTS.items()
+        }
+        params = cls(values)
+        params.validate(server_key)
+        return params
 
 
 @dataclass
 class ServerConfig:
     """Конфигурация одного VPN-сервера (AmneziaWG)."""
 
-    key: str  # внутренний идентификатор, например "ru" или "us"
-    label: str  # человекочитаемое имя для UI, например "🇷🇺 Россия"
+    key: str  # внутренний идентификатор, например "nl" или "us"
+    label: str  # человекочитаемое имя для UI, например "🇳🇱 Нидерланды"
     public_key: str  # публичный ключ AmneziaWG сервера
     endpoint: str  # host:port для подключения клиентов
     subnet_prefix: str  # префикс подсети, например "10.0.0." или "10.0.1."
@@ -18,6 +118,7 @@ class ServerConfig:
     ssh_host: Optional[str] = None
     ssh_user: str = "root"
     ssh_key_path: Optional[str] = None
+    awg: AwgParams = field(default_factory=AwgParams)
 
     @property
     def is_remote(self) -> bool:
@@ -100,6 +201,7 @@ def _load_servers() -> dict:
             ssh_host=ssh_host,
             ssh_user=ssh_user,
             ssh_key_path=ssh_key_path,
+            awg=AwgParams.from_env(server_key),
         )
 
     return servers

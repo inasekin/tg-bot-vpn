@@ -3,8 +3,8 @@
 echo "Инициализация VPN бота..."
 
 if [ ! -f .env ]; then
-    echo "Создаю .env из .env.example..."
-    cp .env.example .env
+    echo "Создаю .env из .env-example..."
+    cp .env-example .env
     echo "Пожалуйста, заполните .env своими данными"
 else
     echo ".env уже существует"

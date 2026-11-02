@@ -233,6 +233,7 @@ async def process_vpn_name(message: types.Message, state: FSMContext):
             server_public_key=server.public_key,
             server_endpoint=server.endpoint,
             client_ip=client_ip,
+            awg=server.awg,
         )
 
         safe_name = re.sub(r"[^\w\-]", "_", name)
@@ -337,6 +338,7 @@ async def download_config(callback: types.CallbackQuery):
             server_public_key=server.public_key,
             server_endpoint=server.endpoint,
             client_ip=config["ip_address"],
+            awg=server.awg,
         )
 
         safe_name = re.sub(r"[^\w\-]", "_", name)
