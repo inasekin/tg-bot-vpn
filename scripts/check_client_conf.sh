@@ -11,6 +11,11 @@ CONF="${1:?укажите путь к клиентскому .conf}"
 IFACE="${2:-wg0}"
 LISTEN_SECONDS="${3:-20}"
 
+if [ ! -r "$CONF" ]; then
+    echo "✗ файл '$CONF' не найден. Найти: ls -la ~/*.conf /root/*.conf" >&2
+    exit 1
+fi
+
 ok() { echo "  ✓ $*"; }
 bad() { echo "  ✗ $*"; FAILED=1; }
 info() { echo "  · $*"; }
@@ -109,12 +114,29 @@ fi
 iptables -S INPUT 2>/dev/null | grep -E -- "-P INPUT (DROP|REJECT)" >/dev/null &&
     info "политика iptables INPUT = DROP; правила с $PORT: $(iptables -S INPUT | grep -c "$PORT")"
 
+# Отладочный лог модуля ядра: покажет, ПОЧЕМУ сервер отбрасывает пакеты.
+DYNDBG=/sys/kernel/debug/dynamic_debug/control
+KDEBUG=0
+if lsmod 2>/dev/null | grep -q '^amneziawg' && [ -w "$DYNDBG" ]; then
+    echo "module amneziawg +p" > "$DYNDBG" && KDEBUG=1
+    DMESG_FROM=$(date '+%Y-%m-%d %H:%M:%S')
+fi
+
 echo "== Трафик: подключитесь клиентом в течение ${LISTEN_SECONDS}с..."
 if command -v tcpdump >/dev/null; then
     DUMP=$(timeout "$LISTEN_SECONDS" tcpdump -nni any -l "udp port $PORT" 2>/dev/null)
     IN=$(echo "$DUMP" | grep -c "> [0-9.]*\.$PORT:" || true)
     OUT=$(echo "$DUMP" | grep -c "\.$PORT > " || true)
     info "входящих пакетов: $IN, исходящих: $OUT"
+    info "по адресам клиентов (вход / выход):"
+    # направление определяем по локальным IP сервера: порт клиента тоже может быть $PORT
+    echo "$DUMP" | awk -v local="$(hostname -I 2>/dev/null)" '
+        BEGIN { n = split(local, l, " "); for (i = 1; i <= n; i++) me[l[i]] = 1 }
+        { for (i = 1; i <= NF; i++) if ($i == ">") { src = $(i-1); dst = $(i+1); break }
+          sub(/:$/, "", dst); sub(/\.[0-9]+$/, "", src); sub(/\.[0-9]+$/, "", dst)
+          if (src in me) out[dst]++; else inn[src]++ }
+        END { for (ip in inn) all[ip]; for (ip in out) all[ip]
+              for (ip in all) printf "      %-18s %4d / %d\n", ip, inn[ip], out[ip] }'
     if [ "$IN" -eq 0 ]; then
         bad "пакеты от клиента не доходят → Endpoint/IP, файрвол провайдера или блокировка в сети клиента"
     elif [ "$OUT" -eq 0 ]; then
@@ -125,6 +147,16 @@ if command -v tcpdump >/dev/null; then
     awg show "$IFACE" latest-handshakes | grep "^$CLIENT_PUB" | awk '{ print "  · latest handshake (unix):", $2 }'
 else
     info "tcpdump не установлен: apt install tcpdump"
+    sleep "$LISTEN_SECONDS"
+fi
+
+echo "== Лог модуля amneziawg за время замера"
+if [ "$KDEBUG" -eq 1 ]; then
+    echo "module amneziawg -p" > "$DYNDBG"
+    journalctl -k --since "$DMESG_FROM" --no-pager 2>/dev/null | grep -i "$IFACE" | tail -n 25 | sed 's/^/  /'
+else
+    info "недоступен (не модуль ядра amneziawg или нет debugfs)."
+    info "проверьте: lsmod | grep amneziawg; ps aux | grep amneziawg-go"
 fi
 
 echo
