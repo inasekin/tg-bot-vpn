@@ -16,9 +16,17 @@ def test_defaults_are_valid():
     AwgParams().validate()
 
 
-def test_header_protection_key_omitted_by_default():
-    keys = [k for k, _ in AwgParams().interface_items()]
-    assert "HeaderProtectionKey" not in keys
+def test_awg3_params_omitted_by_default():
+    keys = {k for k, _ in AwgParams().interface_items()}
+    assert keys == {"Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4"}
+
+
+def test_random_trailers_requires_equal_s():
+    AwgParams(
+        {**AWG_DEFAULTS, "RandomTrailers": "on", **dict.fromkeys(("S1", "S2", "S3", "S4"), "16")}
+    ).validate()
+    with pytest.raises(ValueError, match="S1 = S2 = S3 = S4"):
+        AwgParams({**AWG_DEFAULTS, "RandomTrailers": "on"}).validate()
 
 
 @pytest.mark.parametrize(

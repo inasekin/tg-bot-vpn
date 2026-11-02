@@ -35,7 +35,7 @@ load_dotenv(os.path.join(ROOT, ".env"))
 from cryptography.hazmat.primitives import serialization  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey  # noqa: E402
 
-from config import SERVERS  # noqa: E402
+from config import AWG_DEFAULTS, SERVERS  # noqa: E402
 from server import _build_command  # noqa: E402
 
 SERVER_SIDE = {
@@ -92,6 +92,11 @@ def table(text: str) -> dict:
     return out
 
 
+def norm(value: str) -> str:
+    """Выключенный параметр awg show печатает как off/0, а бот его просто не пишет."""
+    return "" if value.strip().lower() in ("", "off", "0", "0-0", "false") else value.strip()
+
+
 def mark(ok: bool) -> str:
     return "✓" if ok else "✗"
 
@@ -114,8 +119,11 @@ def check_server(server) -> dict:
 
     live = interface_params(show)
     bot = dict(server.awg.interface_items())
-    for param in list(bot) + [p for p in ("RandomTrailers", "DisableCookies") if p not in bot]:
-        mine, theirs = bot.get(param, ""), live.get(label(param), "")
+    # проверяем ВСЕ известные параметры: в т.ч. включённые на сервере, но не в боте
+    for param in AWG_DEFAULTS:
+        mine, theirs = norm(bot.get(param, "")), norm(live.get(label(param), ""))
+        if not mine and not theirs:
+            continue
         if mine == theirs:
             shown = "<задан>" if param in SECRET and mine else (mine or "<нет>")
             print(f"  ✓ {param} = {shown}")

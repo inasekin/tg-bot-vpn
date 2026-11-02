@@ -24,18 +24,24 @@ AWG_DEFAULTS: Dict[str, str] = {
     "H2": "2345678-2346678",
     "H3": "3456789-3457789",
     "H4": "4567890-4568890",
-    # Ключ генерируется на сервере (`awg genkey`) и является секретом — только через .env.
-    "HeaderProtectionKey": "",
-    "ContentPaddingAddition": "20-80",
-    # Есть в amneziawg-tools v3.1+ (видны в `awg show`), хотя README amneziawg-go их не описывает.
-    # Должны совпадать с сервером: без RandomTrailers клиент не понимает пакеты сервера.
-    "RandomTrailers": "on",
-    "DisableCookies": "off",
-    "RekeyAfterTime": "100-120",
-    "RekeyTimeout": "3-7",
-    "RejectAfterTime": "150-180",
-    "KeepaliveTimeout": "5-15",
-    "MaxHandshakeAttempts": "15-20",
+    # --- Параметры AWG 3.x: по умолчанию ВЫКЛЮЧЕНЫ, включаются через .env осознанно. ---
+    # На ноябрь 2026 у модуля ядра (v3.1.20260906) открыты баги совместимости с
+    # amneziawg-go (на нём клиенты Windows/Android/iOS):
+    #   - HeaderProtectionKey: рукопожатие между kmod и go игнорируется
+    #     https://github.com/amnezia-vpn/amneziawg-linux-kernel-module/issues/222
+    #   - RandomTrailers: потеря пакетов данных при диапазонных H1-H4 / разных S1-S4
+    #     https://github.com/amnezia-vpn/amneziawg-linux-kernel-module/issues/226
+    # Рекомендации docs.amnezia.org для 3.1: с HeaderProtectionKey — H1..H4 = 1,2,3,4
+    # и S1-S4 >= 12; с RandomTrailers — S1 = S2 = S3 = S4.
+    "HeaderProtectionKey": "",  # секрет, только через .env (`awg genkey` на сервере)
+    "ContentPaddingAddition": "",
+    "RandomTrailers": "",
+    "DisableCookies": "",
+    "RekeyAfterTime": "",
+    "RekeyTimeout": "",
+    "RejectAfterTime": "",
+    "KeepaliveTimeout": "",
+    "MaxHandshakeAttempts": "",
 }
 
 _INT_PARAMS = ("Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4")
@@ -90,6 +96,15 @@ class AwgParams:
             for prev, cur in zip(h_ranges, h_ranges[1:]):
                 if cur[1] <= prev[2]:
                     raise ValueError(f"диапазоны {prev[0]} и {cur[0]} пересекаются")
+
+            if v.get("RandomTrailers") == "on":
+                sizes = {v.get(name, "0") for name in ("S1", "S2", "S3", "S4")}
+                if len(sizes) != 1:
+                    raise ValueError(
+                        "RandomTrailers = on требует S1 = S2 = S3 = S4 (docs.amnezia.org, "
+                        "kernel-module issue #226), сейчас: "
+                        + ", ".join(f"{n}={v.get(n, '<нет>')}" for n in ("S1", "S2", "S3", "S4"))
+                    )
 
             if "HeaderProtectionKey" in v:
                 for name in ("S1", "S2", "S3", "S4"):
