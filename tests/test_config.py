@@ -9,6 +9,7 @@ def test_env_name():
     assert _env_name("Jmin") == "JMIN"
     assert _env_name("H1") == "H1"
     assert _env_name("ContentPaddingAddition") == "CONTENT_PADDING_ADDITION"
+    assert _env_name("RandomTrailers") == "RANDOM_TRAILERS"
 
 
 def test_defaults_are_valid():
@@ -25,6 +26,7 @@ def test_header_protection_key_omitted_by_default():
     [
         ({"Jmin": "2000"}, "Jmin"),
         ({"S1": "abc"}, "S1"),
+        ({"RandomTrailers": "yes"}, "on/off"),
         ({"H2": "1234000-1234600"}, "пересекаются"),
         ({"H1": "200-100"}, "начало больше конца"),
         ({"HeaderProtectionKey": "key", "S3": "5"}, "S1-S4 >= 12"),

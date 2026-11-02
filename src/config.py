@@ -1,7 +1,7 @@
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, Optional, overload
 
 # Параметры обфускации AmneziaWG, которые попадают в секцию [Interface] клиентского
 # конфига. Порядок словаря = порядок строк в конфиге.
@@ -27,6 +27,10 @@ AWG_DEFAULTS: Dict[str, str] = {
     # Ключ генерируется на сервере (`awg genkey`) и является секретом — только через .env.
     "HeaderProtectionKey": "",
     "ContentPaddingAddition": "20-80",
+    # Есть в amneziawg-tools v3.1+ (видны в `awg show`), хотя README amneziawg-go их не описывает.
+    # Должны совпадать с сервером: без RandomTrailers клиент не понимает пакеты сервера.
+    "RandomTrailers": "on",
+    "DisableCookies": "off",
     "RekeyAfterTime": "100-120",
     "RekeyTimeout": "3-7",
     "RejectAfterTime": "150-180",
@@ -70,6 +74,10 @@ class AwgParams:
             for name in _INT_PARAMS:
                 if name in v and not v[name].isdigit():
                     raise ValueError(f"{name} должен быть целым числом, получено '{v[name]}'")
+
+            for name in ("RandomTrailers", "DisableCookies"):
+                if name in v and v[name] not in ("on", "off"):
+                    raise ValueError(f"{name} должен быть on/off, получено '{v[name]}'")
 
             if "Jmin" in v and "Jmax" in v and int(v["Jmin"]) > int(v["Jmax"]):
                 raise ValueError("Jmin должен быть <= Jmax")
@@ -136,7 +144,11 @@ LABELS = {
 }
 
 
-def _getenv_for(name: str, server_key: str, default=None):
+@overload
+def _getenv_for(name: str, server_key: str) -> Optional[str]: ...
+@overload
+def _getenv_for(name: str, server_key: str, default: str) -> str: ...
+def _getenv_for(name: str, server_key: str, default: Optional[str] = None) -> Optional[str]:
     """
     Читает переменную окружения WG_SERVER_<NAME>_<KEY>, а если её нет —
     пробует устаревшее имя ключа (например, _RU вместо _NL).
