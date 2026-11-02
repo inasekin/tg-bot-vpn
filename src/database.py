@@ -39,7 +39,7 @@ class Database:
                     private_key TEXT NOT NULL,
                     public_key TEXT NOT NULL,
                     ip_address TEXT NOT NULL,
-                    server TEXT NOT NULL DEFAULT 'ru',
+                    server TEXT NOT NULL DEFAULT 'nl',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users(user_id),
                     UNIQUE(user_id, name)
@@ -53,8 +53,12 @@ class Database:
             columns = [row[1] for row in cursor.fetchall()]
             if "server" not in columns:
                 cursor.execute(
-                    "ALTER TABLE vpn_configs ADD COLUMN server TEXT NOT NULL DEFAULT 'ru'"
+                    "ALTER TABLE vpn_configs ADD COLUMN server TEXT NOT NULL DEFAULT 'nl'"
                 )
+
+            # Первый сервер физически стоит в Нидерландах, но исторически был
+            # заведён под ключом 'ru'. Переименовываем ключ в существующих записях.
+            cursor.execute("UPDATE vpn_configs SET server = 'nl' WHERE server = 'ru'")
 
             conn.commit()
 
@@ -79,7 +83,7 @@ class Database:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def add_vpn_config(self, user_id, name, private_key, public_key, ip_address, server="ru"):
+    def add_vpn_config(self, user_id, name, private_key, public_key, ip_address, server="nl"):
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -152,12 +156,12 @@ class Database:
             conn.commit()
             return cursor.rowcount > 0
 
-    def get_next_ip(self, server="ru", subnet_prefix="10.0.0."):
+    def get_next_ip(self, server="nl", subnet_prefix="10.0.0."):
         """
         Возвращает следующий свободный IP в подсети конкретного сервера.
 
         Args:
-            server: ключ сервера ("ru", "us", ...)
+            server: ключ сервера ("nl", "us", ...)
             subnet_prefix: префикс подсети этого сервера, например "10.0.0." или "10.0.1."
         """
         with self.get_connection() as conn:

@@ -224,8 +224,8 @@ async def process_vpn_name(message: types.Message, state: FSMContext):
 
         db.add_vpn_config(user_id, name, private_key, public_key, client_ip, server.key)
 
-        success = add_peer_to_server(server, public_key, client_ip)
-        if not success:
+        peer_added = add_peer_to_server(server, public_key, client_ip)
+        if not peer_added:
             logger.warning(f"Не удалось связать пользователя с сервером {user_id} ({server.key})")
 
         config_text = create_client_config(
@@ -240,11 +240,28 @@ async def process_vpn_name(message: types.Message, state: FSMContext):
             config_text.encode("utf-8"), filename=f"vpn_{safe_name.lower()}.conf"
         )
 
-        sent = await bot.send_message(
-            message.chat.id,
-            f"Конфиг '{name}' готов!\n\nСервер: {server.label}\nIP: {client_ip}\n\n"
-            f"Скачайте файл и импортируйте в приложение AmneziaVPN",
-        )
+        if peer_added:
+            status_text = (
+                f"Конфиг '{name}' готов!\n\nСервер: {server.label}\nIP: {client_ip}\n\n"
+                f"Скачайте файл и импортируйте в приложение AmneziaVPN"
+            )
+        else:
+            status_text = (
+                f"Конфиг '{name}' создан, но НЕ добавлен на сервер {server.label} "
+                f"(IP: {client_ip}) — подключение работать не будет.\n\n"
+                f"Администратор уже уведомлён, подробности в логах бота."
+            )
+            try:
+                await bot.send_message(
+                    ADMIN_ID,
+                    f"⚠️ Не удалось добавить пира на сервер '{server.key}' "
+                    f"для user {user_id}, конфиг '{name}' (IP: {client_ip}). "
+                    f"Смотрите bot.log.",
+                )
+            except Exception as notify_error:
+                logger.error(f"Не удалось уведомить админа: {notify_error}")
+
+        sent = await bot.send_message(message.chat.id, status_text)
         await state.update_data(last_bot_message_id=sent.message_id)
 
         await bot.send_document(

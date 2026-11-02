@@ -27,20 +27,7 @@ def generate_keys():
 
     return private_key, public_key
 
-
 def create_client_config(private_key, server_public_key, server_endpoint, client_ip):
-    """
-    Создание конфигурации клиента для AmneziaWG
-
-    Args:
-        private_key: Приватный ключ клиента
-        server_public_key: Публичный ключ сервера
-        server_endpoint: IP:порт сервера (например: 1.2.3.4:51820)
-        client_ip: IP адрес клиента в VPN сети (например: 10.0.0.2)
-
-    Returns:
-        str: Конфигурация в формате AmneziaWG
-    """
     config = f"""[Interface]
 PrivateKey = {private_key}
 Address = {client_ip}/32
@@ -51,10 +38,21 @@ Jmin = 50
 Jmax = 1000
 S1 = 86
 S2 = 123
-H1 = 1234567
-H2 = 2345678
-H3 = 3456789
-H4 = 4567890
+S3 = 45
+S4 = 67
+H1 = 1234567-1235567
+H2 = 2345678-2346678
+H3 = 3456789-3457789
+H4 = 4567890-4568890
+HeaderProtectionKey = 8f3a2b1c9d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789ab
+ContentPaddingAddition = 20-80
+RandomTrailers = on
+DisableCookies = off
+RekeyAfterTime = 100-120
+RekeyTimeout = 3-7
+RejectAfterTime = 150-180
+KeepaliveTimeout = 5-15
+MaxHandshakeAttempts = 15-20
 
 [Peer]
 PublicKey = {server_public_key}
@@ -63,7 +61,6 @@ AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 10
 """
     return config
-
 
 if __name__ == "__main__":
     print("Генерация ключей...")

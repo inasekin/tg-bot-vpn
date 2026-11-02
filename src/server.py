@@ -29,6 +29,9 @@ def _build_command(server: ServerConfig, remote_args: list) -> list:
         "-o",
         "StrictHostKeyChecking=accept-new",
         "-o",
+        # без BatchMode ssh может зависнуть на запросе пароля до таймаута
+        "BatchMode=yes",
+        "-o",
         f"ConnectTimeout={SSH_TIMEOUT}",
         f"{server.ssh_user}@{server.ssh_host}",
         remote_cmd,
@@ -36,7 +39,13 @@ def _build_command(server: ServerConfig, remote_args: list) -> list:
 
 
 def _run(server: ServerConfig, remote_args: list, label: str) -> bool:
-    cmd = _build_command(server, remote_args)
+    try:
+        cmd = _build_command(server, remote_args)
+    except RuntimeError as e:
+        logger.error(f"[{server.key}] {label}: {e}")
+        return False
+
+    where = f"ssh {server.ssh_user}@{server.ssh_host}" if server.is_remote else "локально"
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True, check=True, timeout=SSH_TIMEOUT
@@ -44,16 +53,20 @@ def _run(server: ServerConfig, remote_args: list, label: str) -> bool:
         logger.info(f"[{server.key}] {label}: OK ({result.stdout.strip()[:200]})")
         return True
     except subprocess.CalledProcessError as e:
-        logger.error(f"[{server.key}] {label}: ошибка — {e.stderr.strip()}")
+        logger.error(
+            f"[{server.key}] {label}: ошибка (код {e.returncode}, {where}) "
+            f"при `{' '.join(remote_args)}` — stderr: {(e.stderr or '').strip()[:500]} "
+            f"stdout: {(e.stdout or '').strip()[:200]}"
+        )
         return False
     except subprocess.TimeoutExpired:
-        logger.error(f"[{server.key}] {label}: таймаут выполнения команды")
+        logger.error(
+            f"[{server.key}] {label}: таймаут {SSH_TIMEOUT}с ({where}) "
+            f"при `{' '.join(remote_args)}`"
+        )
         return False
     except FileNotFoundError:
         logger.warning(f"[{server.key}] {label}: команда не найдена (awg/ssh не установлен?)")
-        return False
-    except RuntimeError as e:
-        logger.error(f"[{server.key}] {label}: {e}")
         return False
 
 
