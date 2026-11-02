@@ -30,6 +30,12 @@ dp = Dispatcher(storage=MemoryStorage())
 
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
+# Серверы, кнопка выпуска конфига для которых видна только админу (через запятую).
+# Сами серверы и их конфиги продолжают работать; скрывается только выпуск новых.
+ADMIN_ONLY_SERVERS = {
+    s.strip() for s in os.getenv("WG_ADMIN_ONLY_SERVERS", "us").split(",") if s.strip()
+}
+
 if not SERVERS:
     raise RuntimeError(
         "Не настроен ни один VPN-сервер. Проверьте переменные WG_SERVERS и "
@@ -86,10 +92,19 @@ def get_config_management_keyboard(configs):
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_server_choice_keyboard():
+def servers_for(user_id):
+    """Серверы, на которых пользователь может выпустить новый конфиг."""
+    return {
+        key: srv
+        for key, srv in SERVERS.items()
+        if user_id == ADMIN_ID or key not in ADMIN_ONLY_SERVERS
+    }
+
+
+def get_server_choice_keyboard(servers):
     buttons = [
         [InlineKeyboardButton(text=srv.label, callback_data=f"srv_{srv.key}")]
-        for srv in SERVERS.values()
+        for srv in servers.values()
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -133,17 +148,23 @@ async def get_vpn_start(message: types.Message, state: FSMContext):
             await state.update_data(last_bot_message_id=sent.message_id)
             return
 
-    if len(SERVERS) > 1:
+    servers = servers_for(user_id)
+    if not servers:
+        sent = await bot.send_message(message.chat.id, "Сейчас нет доступных серверов.")
+        await state.update_data(last_bot_message_id=sent.message_id)
+        return
+
+    if len(servers) > 1:
         await state.set_state(VpnCreation.waiting_for_server)
         sent = await bot.send_message(
             message.chat.id,
             "Выберите сервер (страну):",
-            reply_markup=get_server_choice_keyboard(),
+            reply_markup=get_server_choice_keyboard(servers),
         )
         await state.update_data(last_bot_message_id=sent.message_id)
         return
 
-    await state.update_data(server=DEFAULT_SERVER_KEY)
+    await state.update_data(server=next(iter(servers)))
     await state.set_state(VpnCreation.waiting_for_name)
     sent = await bot.send_message(
         message.chat.id,
@@ -156,7 +177,8 @@ async def get_vpn_start(message: types.Message, state: FSMContext):
 @dp.callback_query(VpnCreation.waiting_for_server, F.data.startswith("srv_"))
 async def process_server_choice(callback: types.CallbackQuery, state: FSMContext):
     server_key = callback.data.replace("srv_", "")
-    if server_key not in SERVERS:
+    # проверяем права и здесь: старая клавиатура или подделанный callback
+    if server_key not in servers_for(callback.from_user.id):
         await callback.answer("Сервер недоступен", show_alert=True)
         return
 
@@ -191,7 +213,7 @@ async def process_vpn_name(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     server_key = data.get("server", DEFAULT_SERVER_KEY)
-    server = SERVERS.get(server_key)
+    server = servers_for(message.from_user.id).get(server_key)
     if not server:
         await delete_previous_messages(message, state)
         await state.clear()
