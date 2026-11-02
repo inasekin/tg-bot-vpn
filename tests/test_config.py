@@ -86,3 +86,30 @@ def test_invalid_awg_env_fails_fast(monkeypatch):
 
     with pytest.raises(ValueError, match="'nl'"):
         _load_servers()
+
+
+QUIC_I1 = "<b 0xc30000000108><r 8><b 0x08><r 8><b 0x004496><r 1000><r 174>"
+
+
+def test_cps_valid_and_emitted(monkeypatch):
+    monkeypatch.setenv("WG_SERVERS", "nl")
+    monkeypatch.setenv("WG_SERVER_PUBLIC_KEY_NL", "pub")
+    monkeypatch.setenv("WG_SERVER_ENDPOINT_NL", "1.1.1.1:443")
+    monkeypatch.setenv("WG_SERVER_I1_NL", QUIC_I1)
+    items = dict(_load_servers()["nl"].awg.interface_items())
+    assert items["I1"] == QUIC_I1
+    assert "I2" not in items
+
+
+@pytest.mark.parametrize(
+    "value, message",
+    [
+        ("<b 0xabc>", "неизвестные теги"),  # нечётное число hex-символов
+        ("<x 5>", "неизвестные теги"),
+        ("<r 8> junk", "неизвестные теги"),
+        ("<r 1001>", "больше 1000"),
+    ],
+)
+def test_cps_invalid(value, message):
+    with pytest.raises(ValueError, match=message):
+        AwgParams({**AWG_DEFAULTS, "I1": value}).validate()

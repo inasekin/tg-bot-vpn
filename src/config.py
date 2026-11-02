@@ -24,6 +24,15 @@ AWG_DEFAULTS: Dict[str, str] = {
     "H2": "2345678-2346678",
     "H3": "3456789-3457789",
     "H4": "4567890-4568890",
+    # I1-I5 (CPS, AWG 1.5+): пакеты-сигнатуры (мимикрия под QUIC/DNS), которые КЛИЕНТ шлёт
+    # перед рукопожатием, чтобы DPI провайдера не опознал AmneziaWG. Только client-side:
+    # сервер их не проверяет и совпадать с сервером они не обязаны. Пусто = не отправляются.
+    # Синтаксис: <b 0xHEX> <t> <r N> <rc N> <rd N>, N <= 1000. Задаются через .env.
+    "I1": "",
+    "I2": "",
+    "I3": "",
+    "I4": "",
+    "I5": "",
     # --- Параметры AWG 3.x: по умолчанию ВЫКЛЮЧЕНЫ, включаются через .env осознанно. ---
     # На ноябрь 2026 у модуля ядра (v3.1.20260906) открыты баги совместимости с
     # amneziawg-go (на нём клиенты Windows/Android/iOS):
@@ -46,6 +55,7 @@ AWG_DEFAULTS: Dict[str, str] = {
 
 _INT_PARAMS = ("Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4")
 _RANGE_RE = re.compile(r"^(\d+)(?:-(\d+))?$")
+_CPS_TAG_RE = re.compile(r"<(?:b 0x(?:[0-9a-fA-F]{2})+|t|r \d+|rc \d+|rd \d+)>")
 
 
 def _env_name(param: str) -> str:
@@ -64,6 +74,15 @@ def _parse_range(value: str):
     return lo, hi
 
 
+def _validate_cps(name: str, value: str) -> None:
+    """Проверка синтаксиса CPS-строки I1-I5: только известные теги, N <= 1000."""
+    if _CPS_TAG_RE.sub("", value).strip():
+        raise ValueError(f"{name}: неизвестные теги или мусор в '{value}'")
+    for n in re.findall(r"<(?:r|rc|rd) (\d+)>", value):
+        if int(n) > 1000:
+            raise ValueError(f"{name}: длина {n} в <r/rc/rd N> больше 1000")
+
+
 @dataclass
 class AwgParams:
     """Параметры обфускации AmneziaWG одного сервера."""
@@ -77,6 +96,10 @@ class AwgParams:
     def validate(self, server_key: str = "?") -> None:
         v = {k: val for k, val in self.values.items() if val != ""}
         try:
+            for name in ("I1", "I2", "I3", "I4", "I5"):
+                if name in v:
+                    _validate_cps(name, v[name])
+
             for name in _INT_PARAMS:
                 if name in v and not v[name].isdigit():
                     raise ValueError(f"{name} должен быть целым числом, получено '{v[name]}'")
